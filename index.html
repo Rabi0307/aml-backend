@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0"/>
+<meta http-equiv="Cache-Control" content="no-store,no-cache,must-revalidate"/>
+<meta name="robots" content="noindex,nofollow"/>
+<title>Compliance Screening Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+/*
+ * AML Compliance Screening Portal v5
+ * State machine: idle → running → success | error
+ * CRITICAL: error state NEVER shows "No Match"
+ * Per compliance guide: API failure = "Screening Failed — No Decision"
+ */
+:root{
+  --i0:#060d16;--i1:#09111c;--i2:#0d1a28;--i3:#122234;--i4:#172c42;
+  --s1:#1a3250;--s2:#214062;
+  --g1:#b8913a;--g2:#d4a84e;--g3:#ecc06a;--g4:#f8d888;
+  --gw:rgba(184,145,58,0.12);--gb:rgba(184,145,58,0.25);
+  --hit:#c0392b;--hs:rgba(192,57,43,0.10);--hb:rgba(192,57,43,0.30);
+  --ok:#1e7a50;--os:rgba(30,122,80,0.10);--ob:rgba(30,122,80,0.30);
+  --wn:#b87020;--ws:rgba(184,112,32,0.10);--wb:rgba(184,112,32,0.30);
+  --err:#8b2020;--es:rgba(139,32,32,0.12);--eb:rgba(139,32,32,0.35);
+  --bl:#1e5a9a;--bs:rgba(30,90,154,0.10);--bb:rgba(30,90,154,0.28);
+  --fd:'Cormorant Garamond',Georgia,serif;
+  --fb:'Outfit',sans-serif;
+  --fm:'JetBrains Mono',monospace;
+  --t0:#f5ede0;--t1:#d8ccb8;--t2:#9eb0c4;--t3:#607888;--t4:#3a5060;
+  --r:3px;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{background:var(--i1);color:var(--t1);font-family:var(--fb);font-size:15px;min-height:100vh;line-height:1.65;-webkit-font-smoothing:antialiased;}
+body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 100% 50% at 50% -5%,rgba(184,145,58,0.07) 0%,transparent 55%),
+  linear-gradient(170deg,var(--i2) 0%,var(--i0) 100%);}
+body::after{content:'';position:fixed;top:0;left:0;right:0;height:1px;z-index:999;
+  background:linear-gradient(90deg,transparent,var(--g1),var(--g3),var(--g1),transparent);}
+.page{max-width:920px;margin:0 auto;padding:0 22px 80px;position:relative;z-index:1;}
+
+/* ── MASTHEAD ── */
+.mast{display:grid;grid-template-columns:180px 1fr 180px;align-items:center;gap:20px;
+padding:46px 0 30px;margin-bottom:30px;border-bottom:1px solid rgba(184,145,58,0.18);}
+.ms{display:flex;flex-direction:column;gap:4px;}
+.ms.r{text-align:right;}
+.mk{font-family:var(–fm);font-size:8px;letter-spacing:2.5px;text-transform:uppercase;color:var(–t4);}
+.mv{font-family:var(–fm);font-size:10px;color:var(–t3);margin-top:1px;}
+.mc{text-align:center;}
+.seal{width:62px;height:62px;margin:0 auto 12px;border:1px solid var(–s2);border-radius:50%;
+background:var(–i2);display:flex;align-items:center;justify-content:center;font-size:26px;
+box-shadow:0 0 32px var(–gw),inset 0 1px 0 rgba(184,145,58,0.12);}
+.mast h1{font-family:var(–fd);font-size:clamp(20px,3.5vw,28px);font-weight:600;color:var(–t0);letter-spacing:1px;}
+.msub{font-family:var(–fm);font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(–g1);margin-top:7px;display:block;}
+@media(max-width:640px){.mast{grid-template-columns:1fr;text-align:center;padding:28px 0 20px;}.ms{display:none;}}
+
+/* ── PRIVACY NOTICE ── */
+.priv{display:flex;align-items:flex-start;gap:12px;background:var(–gw);border:1px solid var(–gb);
+border-left:2px solid var(–g1);border-radius:var(–r);padding:11px 16px;margin-bottom:26px;}
+.priv-i{color:var(–g1);font-size:13px;flex-shrink:0;margin-top:2px;}
+.priv p{font-family:var(–fm);font-size:9px;color:var(–t3);line-height:1.85;}
+.priv strong{color:var(–t2);}
+
+/* ── FORM PANEL ── */
+.panel{background:var(–i2);border:1px solid var(–s1);border-radius:var(–r);overflow:hidden;margin-bottom:26px;transition:box-shadow 0.3s;}
+.panel:focus-within{box-shadow:0 0 0 1px var(–s2),0 10px 40px rgba(0,0,0,0.5);}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;background:var(–i3);border-bottom:1px solid var(–s1);}
+.ph-t{font-family:var(–fm);font-size:9px;font-weight:500;letter-spacing:3px;text-transform:uppercase;color:var(–g1);display:flex;align-items:center;gap:8px;}
+.ph-t::before{content:’’;width:5px;height:5px;border-radius:50%;background:var(–g1);box-shadow:0 0 6px var(–g1);}
+.ph-n{font-family:var(–fm);font-size:9px;color:var(–t4);}
+.pb{padding:26px 22px;}
+@media(max-width:480px){.pb{padding:18px 14px;}}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-bottom:18px;}
+@media(max-width:600px){.g2,.g3{grid-template-columns:1fr;gap:12px;}}
+.f{display:flex;flex-direction:column;gap:6px;}
+.fl{font-family:var(–fm);font-size:8px;font-weight:500;letter-spacing:2.5px;text-transform:uppercase;color:var(–t4);}
+.rq{color:var(–g2);}
+.fi,.fs{background:var(–i1);border:1px solid var(–s1);border-radius:2px;padding:11px 14px;
+color:var(–t0);font-family:var(–fb);font-size:14px;outline:none;width:100%;
+transition:border-color 0.2s,box-shadow 0.2s;-webkit-appearance:none;}
+.fi:focus,.fs:focus{border-color:var(–g2);box-shadow:0 0 0 2px var(–gw);}
+.fi::placeholder{color:var(–t4);font-style:italic;font-size:13px;}
+.fs option{background:var(–i3);color:var(–t0);}
+.thr{display:flex;align-items:center;flex-wrap:wrap;gap:10px;background:var(–i1);border:1px solid var(–s1);
+border-radius:2px;padding:11px 15px;margin-bottom:22px;}
+.thr label{font-family:var(–fm);font-size:9.5px;color:var(–t3);}
+.thr select{background:var(–i3);border:1px solid var(–gb);border-radius:2px;padding:5px 10px;
+color:var(–g2);font-family:var(–fm);font-size:11px;font-weight:500;outline:none;-webkit-appearance:none;cursor:pointer;}
+.cta{width:100%;padding:15px;background:var(–i3);border:1px solid var(–g1);border-radius:2px;
+color:var(–g2);font-family:var(–fd);font-size:17px;font-weight:600;letter-spacing:2px;
+cursor:pointer;overflow:hidden;position:relative;transition:color 0.3s,box-shadow 0.3s;}
+.cta::before{content:’’;position:absolute;top:0;left:-100%;width:100%;height:100%;
+background:linear-gradient(90deg,transparent,rgba(184,145,58,0.12),rgba(184,145,58,0.2),rgba(184,145,58,0.12),transparent);
+transition:left 0.5s ease;}
+.cta:hover{color:var(–g4);box-shadow:0 0 28px var(–gw);}
+.cta:hover::before{left:100%;}
+.cta:disabled{opacity:0.3;cursor:not-allowed;pointer-events:none;}
+.cta span{position:relative;z-index:1;}
+
+/* ── PROGRESS ── */
+.prog{background:var(–i2);border:1px solid var(–s1);border-radius:var(–r);padding:26px 22px;margin-bottom:26px;display:none;}
+.prog-hd{font-family:var(–fm);font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(–g1);margin-bottom:16px;display:flex;align-items:center;gap:10px;}
+.prog-hd::after{content:’’;flex:1;height:1px;background:var(–s1);}
+.prog-bar{height:2px;background:var(–s1);border-radius:1px;overflow:hidden;margin-bottom:22px;}
+.prog-fill{height:100%;background:linear-gradient(90deg,var(–g1),var(–g3));border-radius:1px;
+transition:width 0.8s cubic-bezier(0.4,0,0.2,1);width:0%;animation:sh 2s linear infinite;background-size:200%;}
+@keyframes sh{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+.steps{display:flex;flex-direction:column;gap:7px;}
+.stp{display:flex;align-items:center;gap:12px;padding:4px 0;}
+.si{width:26px;height:26px;border-radius:50%;border:1px solid var(–s1);background:var(–i1);
+display:flex;align-items:center;justify-content:center;font-family:var(–fm);font-size:10px;
+color:var(–t4);flex-shrink:0;transition:all 0.3s;}
+.st{font-family:var(–fm);font-size:11px;color:var(–t4);transition:color 0.3s;flex:1;}
+.stm{font-family:var(–fm);font-size:9px;color:var(–t4);}
+.stp.run .si{border-color:var(–g2);color:var(–g2);background:var(–gw);animation:pu 1.2s ease infinite;}
+.stp.run .st{color:var(–t0);}
+.stp.ok  .si{border-color:#2d8a5a;background:rgba(30,122,80,0.15);color:#5ec48a;}
+.stp.ok  .st{color:#5ec48a;}
+.stp.err .si{border-color:var(–hb);background:var(–hs);color:#e57373;}
+.stp.err .st{color:#e57373;}
+@keyframes pu{0%,100%{box-shadow:0 0 0 0 rgba(184,145,58,0.3);}50%{box-shadow:0 0 0 7px transparent;}}
+
+/* ── SCREENING FAILED BANNER (compliance critical) ── */
+.fail-banner{
+background:var(–es);border:2px solid var(–eb);border-radius:var(–r);
+padding:24px 26px;margin-bottom:24px;display:none;
+}
+.fb-title{font-family:var(–fd);font-size:22px;font-weight:700;color:#ef9a9a;margin-bottom:8px;}
+.fb-sub{font-family:var(–fm);font-size:11px;color:#e57373;letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;}
+.fb-msg{font-family:var(–fb);font-size:13px;color:var(–t2);line-height:1.7;margin-bottom:14px;}
+.fb-rule{font-family:var(–fm);font-size:10px;color:#ef9a9a;background:var(–hs);
+border:1px solid var(–hb);padding:8px 14px;border-radius:2px;display:inline-block;}
+
+/* ── RESULTS ── */
+.res{display:none;}
+.verd{border-radius:var(–r);padding:20px 24px;margin-bottom:20px;display:flex;
+align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;position:relative;overflow:hidden;}
+.verd::before{content:’’;position:absolute;top:0;left:0;right:0;height:1px;}
+.v-h{background:var(–hs);border:1px solid var(–hb);}.v-h::before{background:linear-gradient(90deg,transparent,var(–hit),transparent);}
+.v-c{background:var(–os);border:1px solid var(–ob);}.v-c::before{background:linear-gradient(90deg,transparent,var(–ok),transparent);}
+.v-r{background:var(–ws);border:1px solid var(–wb);}.v-r::before{background:linear-gradient(90deg,transparent,var(–wn),transparent);}
+.vl .vsb{font-family:var(–fm);font-size:8px;letter-spacing:3px;text-transform:uppercase;color:var(–t4);margin-bottom:5px;}
+.vl .vn{font-family:var(–fd);font-size:21px;font-weight:600;color:var(–t0);}
+.vl .vm{font-family:var(–fm);font-size:9px;color:var(–t3);margin-top:4px;}
+.vtag{font-family:var(–fm);font-size:10px;font-weight:500;padding:9px 16px;border-radius:2px;letter-spacing:1.5px;white-space:nowrap;}
+.vt-h{background:var(–hs);border:1px solid var(–hb);color:#ef9a9a;}
+.vt-c{background:var(–os);border:1px solid var(–ob);color:#81c784;}
+.vt-r{background:var(–ws);border:1px solid var(–wb);color:#ffcc80;}
+
+/* ── ACTIONS ── */
+.acts{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:26px;}
+.btn{padding:11px 20px;border-radius:2px;font-family:var(–fm);font-size:10px;font-weight:500;
+letter-spacing:1.5px;cursor:pointer;border:none;transition:all 0.2s;}
+.bg{background:var(–g1);color:var(–i0);box-shadow:0 2px 14px rgba(184,145,58,0.28);}
+.bg:hover{background:var(–g3);}
+.bo{background:transparent;color:var(–t3);border:1px solid var(–s1);}
+.bo:hover{border-color:var(–t3);color:var(–t1);}
+@media(max-width:480px){.acts{flex-direction:column;}.btn{width:100%;text-align:center;padding:13px;}}
+
+/* ── PARAMS ── */
+.pcard{background:var(–i2);border:1px solid var(–s1);border-radius:var(–r);overflow:hidden;margin-bottom:22px;}
+.pcard-h{padding:10px 17px;background:var(–i3);border-bottom:1px solid var(–s1);font-family:var(–fm);font-size:8px;letter-spacing:2.5px;text-transform:uppercase;color:var(–t4);}
+.pcard-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));}
+.pci{padding:11px 17px;border-right:1px solid var(–s1);border-bottom:1px solid var(–s1);}
+.pcl{font-family:var(–fm);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(–t4);margin-bottom:4px;}
+.pcv{font-family:var(–fb);font-size:13px;color:var(–t0);font-weight:500;}
+.pcv.n{color:var(–t4);font-style:italic;font-size:12px;}
+
+/* ── SECTION DIVIDER ── */
+.sd{display:flex;align-items:center;gap:13px;margin:26px 0 14px;}
+.sd::after{content:’’;flex:1;height:1px;background:var(–s1);}
+.sd h3{font-family:var(–fm);font-size:8px;letter-spacing:3.5px;text-transform:uppercase;white-space:nowrap;}
+.sd-r h3{color:#e57373;}.sd-w h3{color:#ffcc80;}.sd-s h3{color:#81c784;}.sd-m h3{color:var(–t4);}.sd-g h3{color:var(–g2);}
+.bdg{font-family:var(–fm);font-size:8px;padding:2px 7px;border-radius:2px;margin-left:7px;}
+.br{background:var(–hs);color:#e57373;border:1px solid var(–hb);}
+.bw{background:var(–ws);color:#ffcc80;border:1px solid var(–wb);}
+
+/* ── RECORD CARD ── */
+.rec{background:var(–i2);border-radius:var(–r);margin-bottom:14px;overflow:hidden;}
+.rec.conf{border:1px solid var(–hb);}
+.rec.poss{border:1px solid var(–wb);}
+.rh{padding:14px 19px;border-bottom:1px solid var(–s1);display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+.rec.conf .rh{background:rgba(192,57,43,0.06);}
+.rec.poss .rh{background:rgba(184,112,32,0.06);}
+.rn{font-family:var(–fd);font-size:19px;font-weight:600;color:var(–t0);}
+.rm{font-family:var(–fm);font-size:8.5px;color:var(–t4);margin-top:4px;}
+.rs{font-family:var(–fm);font-size:10px;font-weight:500;padding:6px 13px;border-radius:2px;background:var(–gw);border:1px solid var(–gb);color:var(–g2);white-space:nowrap;flex-shrink:0;}
+.rcf{padding:8px 19px;border-bottom:1px solid var(–s1);display:flex;align-items:center;gap:11px;background:rgba(0,0,0,0.08);}
+.rcfl{font-family:var(–fm);font-size:8px;color:var(–t4);flex-shrink:0;}
+.rcbw{flex:1;height:5px;background:var(–s1);border-radius:3px;overflow:hidden;}
+.rcb{height:100%;border-radius:3px;transition:width 0.6s ease;}
+.rcp{font-family:var(–fm);font-size:10px;font-weight:500;color:var(–g2);flex-shrink:0;min-width:34px;text-align:right;}
+.rft{padding:9px 19px;border-bottom:1px solid var(–s1);display:flex;flex-wrap:wrap;gap:5px;align-items:center;background:rgba(30,122,80,0.03);}
+.rftl{font-family:var(–fm);font-size:8px;color:var(–t4);margin-right:2px;}
+.rftag{font-family:var(–fm);font-size:8px;padding:2px 8px;border-radius:2px;background:var(–os);border:1px solid var(–ob);color:#81c784;}
+.rdg{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));}
+.rdi{padding:11px 19px;border-right:1px solid var(–s1);border-bottom:1px solid var(–s1);}
+.rdl{font-family:var(–fm);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(–t4);margin-bottom:4px;}
+.rdv{font-family:var(–fb);font-size:13px;color:var(–t2);}
+.rdv.n{color:var(–t4);font-style:italic;}
+.rsrc{padding:11px 19px;background:rgba(0,0,0,0.12);}
+.rsrcl{font-family:var(–fm);font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(–t4);margin-bottom:4px;}
+.rsrca{font-family:var(–fm);font-size:9px;color:var(–g1);text-decoration:none;word-break:break-all;border-bottom:1px solid rgba(184,145,58,0.2);transition:color 0.2s;}
+.rsrca:hover{color:var(–g3);}
+
+/* ── NO MATCH ── */
+.nm{text-align:center;padding:48px 22px;background:var(–i2);border:1px solid var(–s1);border-radius:var(–r);margin-bottom:22px;}
+.nm-h{font-family:var(–fd);font-size:21px;font-weight:600;color:var(–t0);margin-bottom:8px;}
+.nm-p{font-family:var(–fb);font-size:13px;color:var(–t3);max-width:500px;margin:0 auto 14px;line-height:1.7;}
+.nm-n{display:inline-block;font-family:var(–fm);font-size:9px;color:var(–g2);background:var(–gw);border:1px solid var(–gb);padding:7px 16px;border-radius:2px;}
+
+/* ── SOURCES TABLE with CHECKLIST ── */
+.stbl{background:var(–i2);border:1px solid var(–s1);border-radius:var(–r);overflow:hidden;margin-bottom:22px;}
+.stbl-h{padding:12px 17px;background:var(–i3);border-bottom:1px solid var(–s1);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.stbl-t{font-family:var(–fm);font-size:8px;letter-spacing:3px;text-transform:uppercase;color:var(–t4);}
+.stbl-open{font-family:var(–fm);font-size:9px;padding:5px 12px;border-radius:2px;background:var(–g1);color:var(–i0);border:none;cursor:pointer;font-weight:600;transition:background 0.2s;}
+.stbl-open:hover{background:var(–g3);}
+
+.src-row{display:flex;align-items:center;gap:10px;padding:10px 17px;border-bottom:1px solid rgba(255,255,255,0.03);transition:background 0.15s;}
+.src-row:last-child{border-bottom:none;}
+.src-row:hover{background:rgba(255,255,255,0.02);}
+
+/* Checkbox for manual checklist */
+.src-chk{
+width:18px;height:18px;border-radius:2px;border:1px solid var(–s2);
+background:var(–i1);flex-shrink:0;cursor:pointer;
+display:flex;align-items:center;justify-content:center;
+font-size:11px;color:transparent;transition:all 0.2s;
+}
+.src-row.checked .src-chk{background:var(–ok);border-color:var(–ob);color:#fff;}
+.src-row.auto-done .src-chk{background:var(–ok);border-color:var(–ob);color:#fff;cursor:default;}
+
+.src-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.src-nm{font-family:var(–fb);font-size:13px;color:var(–t2);font-weight:500;flex:0 0 172px;}
+.src-url{font-family:var(–fm);font-size:9px;color:var(–g1);text-decoration:none;word-break:break-all;flex:1;
+border-bottom:1px solid rgba(184,145,58,0.15);transition:color 0.2s;padding-bottom:1px;}
+.src-url:hover{color:var(–g3);}
+.src-b{font-family:var(–fm);font-size:7px;padding:2px 6px;border-radius:2px;flex-shrink:0;white-space:nowrap;}
+.sb-m{background:var(–hs);color:#e57373;border:1px solid var(–hb);}
+.sb-r{background:var(–os);color:#81c784;border:1px solid var(–ob);}
+.sb-i{background:var(–bs);color:#90caf9;border:1px solid var(–bb);}
+@media(max-width:580px){.src-nm{flex:0 0 110px;font-size:12px;}.src-b{display:none;}}
+
+/* Checklist progress bar */
+.chk-prog{padding:10px 17px;background:var(–i3);border-top:1px solid var(–s1);display:flex;align-items:center;gap:12px;}
+.cp-lbl{font-family:var(–fm);font-size:9px;color:var(–t4);flex-shrink:0;}
+.cp-bar{flex:1;height:4px;background:var(–s1);border-radius:2px;overflow:hidden;}
+.cp-fill{height:100%;background:linear-gradient(90deg,var(–ok),#5ec48a);border-radius:2px;transition:width 0.4s ease;}
+.cp-pct{font-family:var(–fm);font-size:9px;color:var(–g2);flex-shrink:0;min-width:28px;text-align:right;}
+
+/* ── AUDIT ── */
+.audit{background:var(–i2);border:1px solid var(–s1);border-radius:var(–r);overflow:hidden;margin-bottom:18px;}
+.ar{display:flex;gap:13px;padding:7px 17px;border-bottom:1px solid rgba(255,255,255,0.03);font-family:var(–fm);font-size:9px;}
+.ar:last-child{border-bottom:none;}
+.at{color:var(–g1);flex-shrink:0;min-width:62px;}
+.am{color:var(–t3);}
+
+/* ── FOOTER ── */
+.foot{text-align:center;padding:22px 0 0;border-top:1px solid var(–s1);margin-top:8px;}
+.foot p{font-family:var(–fm);font-size:8.5px;color:var(–t4);letter-spacing:0.8px;line-height:2.2;}
+
+@media print{
+body{background:#fff;color:#111;}
+body::before,body::after,.ms,.priv,.panel,.prog,.acts,.foot,.stbl-open{display:none!important;}
+.res,.fail-banner{display:block!important;}
+.rec,.pcard,.audit,.verd,.stbl,.fail-banner{border:1px solid #ccc!important;background:#fafafa!important;break-inside:avoid;}
+.rn,.nm-h{color:#111!important;}.rdv,.pcv{color:#333!important;}.rsrca,.src-url{color:#003399!important;}
+.src-chk{border:1px solid #999!important;}
+.src-row.checked .src-chk::after{content:‘✓’;}
+}
+</style>
+
+</head>
+<body>
+<div class="page">
+
+<header class="mast">
+  <div class="ms">
+    <span class="mk">Classification</span><span class="mv">RESTRICTED — INTERNAL</span>
+    <span class="mk" style="margin-top:7px">Framework</span><span class="mv">PMLA 2002 · RBI KYC · SEBI</span>
+    <span class="mk" style="margin-top:7px">Data Retention</span><span class="mv">Zero — Memory Only</span>
+  </div>
+  <div class="mc">
+    <div class="seal">⚖</div>
+    <h1>Compliance Screening Portal</h1>
+    <span class="msub">AML · PEP · Sanctions Verification</span>
+  </div>
+  <div class="ms r">
+    <span class="mk">Engine</span><span class="mv">OpenSanctions logic-v2</span>
+    <span class="mk" style="margin-top:7px">Coverage</span><span class="mv">UN · EU · OFAC · PEP · 100+</span>
+    <span class="mk" style="margin-top:7px">Login Required</span><span class="mv">None</span>
+  </div>
+</header>
+
+<div class="priv">
+  <span class="priv-i">⬡</span>
+  <p><strong>Zero-Storage Mode.</strong> No data written to localStorage, cookies, or any server. All session state is held in browser memory — discarded permanently when tab closes. Searches routed via <strong>secure serverless function</strong> to OpenSanctions /match API (logic-v2). <strong>Per compliance policy: API failure is reported as "Screening Failed — No Decision", never as "No Match".</strong></p>
+</div>
+
+<!-- FORM -->
+
+<div class="panel" id="formEl">
+  <div class="ph">
+    <span class="ph-t">Subject Identification Parameters</span>
+    <span class="ph-n">Name required · More fields = higher accuracy</span>
+  </div>
+  <div class="pb">
+    <div class="g2">
+      <div class="f"><label class="fl">Full Legal Name <span class="rq">✦</span></label>
+        <input class="fi" type="text" id="f_name" placeholder="As per identity document" autocomplete="off" spellcheck="false"/></div>
+      <div class="f"><label class="fl">Father's / Spouse's Name</label>
+        <input class="fi" type="text" id="f_father" placeholder="As per records" autocomplete="off" spellcheck="false"/></div>
+    </div>
+    <div class="g3">
+      <div class="f"><label class="fl">Date of Birth</label>
+        <input class="fi" type="text" id="f_dob" placeholder="DD/MM/YYYY or YYYY" autocomplete="off"/></div>
+      <div class="f"><label class="fl">PAN / Tax Number</label>
+        <input class="fi" type="text" id="f_pan" placeholder="e.g. ABCDE1234F" autocomplete="off" spellcheck="false" maxlength="15"/></div>
+      <div class="f"><label class="fl">Passport / National ID</label>
+        <input class="fi" type="text" id="f_passport" placeholder="Document number" autocomplete="off" spellcheck="false"/></div>
+    </div>
+    <div class="g2">
+      <div class="f"><label class="fl">City of Residence / Operation</label>
+        <input class="fi" type="text" id="f_city" placeholder="e.g. Mumbai, Karachi, Dubai" autocomplete="off"/></div>
+      <div class="f"><label class="fl">Country of Nationality / Residence</label>
+        <input class="fi" type="text" id="f_country" placeholder="e.g. India, Pakistan, UAE" autocomplete="off"/></div>
+    </div>
+    <div class="g2">
+      <div class="f"><label class="fl">Analyst Reference ID</label>
+        <input class="fi" type="text" id="f_analyst" placeholder="e.g. AML-01 / Officer Name" autocomplete="off"/></div>
+      <div class="f"><label class="fl">Case / File Reference Number</label>
+        <input class="fi" type="text" id="f_case" placeholder="e.g. KYC-2024-0001" autocomplete="off"/></div>
+    </div>
+    <div class="thr">
+      <label>Show results scoring</label>
+      <select id="f_thresh">
+        <option value="0.4">≥ 40% (very sensitive)</option>
+        <option value="0.5">≥ 50%</option>
+        <option value="0.6" selected>≥ 60% (recommended)</option>
+        <option value="0.7">≥ 70%</option>
+        <option value="0.85">≥ 85% (strict)</option>
+      </select>
+      <label>— lower = more results, higher = fewer false positives</label>
+    </div>
+    <button class="cta" id="cta" onclick="doSearch()"><span>Initiate Compliance Screening</span></button>
+  </div>
+</div>
+
+<!-- PROGRESS -->
+
+<div class="prog" id="progEl">
+  <div class="prog-hd">Screening In Progress</div>
+  <div class="prog-bar"><div class="prog-fill" id="pfill"></div></div>
+  <div class="steps" id="stepsEl"></div>
+</div>
+
+<!-- COMPLIANCE: SCREENING FAILED — NO DECISION (shown on API error, NEVER "No Match") -->
+
+<div class="fail-banner" id="failBanner">
+  <div class="fb-sub">⚠ Screening Status</div>
+  <div class="fb-title">Screening Failed — No Decision</div>
+  <div class="fb-msg" id="failMsg"></div>
+  <div class="fb-rule">Per compliance policy: API failure is not "No Match". Subject cannot be cleared. Manual verification is mandatory before any decision.</div>
+</div>
+
+<!-- RESULTS (only shown on state=success) -->
+
+<div class="res" id="resEl">
+
+  <div class="verd" id="verdEl">
+    <div class="vl">
+      <div class="vsb">Subject of Screening</div>
+      <div class="vn" id="v-n"></div>
+      <div class="vm" id="v-m"></div>
+    </div>
+    <span class="vtag" id="v-t"></span>
+  </div>
+
+  <div class="acts">
+    <button class="btn bg" onclick="exportPDF()">Download PDF Report with Source Links</button>
+    <button class="btn bo" onclick="newSearch()">New Search</button>
+  </div>
+
+  <div class="pcard">
+    <div class="pcard-h">Parameters Used in This Search</div>
+    <div class="pcard-g" id="pcGrid"></div>
+  </div>
+
+  <div id="matchArea"></div>
+
+  <!-- ALL SOURCES CHECKLIST — always visible in success state -->
+
+  <div class="sd sd-g">
+    <h3>All Sources Checked
+      <span class="bdg" style="background:var(--os);color:#81c784;border:1px solid var(--ob);" id="srcBdg"></span>
+    </h3>
+  </div>
+  <div class="stbl">
+    <div class="stbl-h">
+      <span class="stbl-t">Check all sources below — automated ✓ shown, manual ☐ require your verification</span>
+      <button class="stbl-open" onclick="openAllManual()">Open All Manual Links</button>
+    </div>
+    <div id="srcList"></div>
+    <div class="chk-prog">
+      <span class="cp-lbl">Verification Progress</span>
+      <div class="cp-bar"><div class="cp-fill" id="cpFill" style="width:0%"></div></div>
+      <span class="cp-pct" id="cpPct">0%</span>
+    </div>
+  </div>
+
+  <div class="sd sd-m"><h3>Audit Trail</h3></div>
+  <div class="audit" id="auditEl"></div>
+
+</div><!-- /res -->
+
+<!-- MANUAL LINKS (shown in both success and error states) -->
+
+<div id="manualFallback" style="display:none">
+  <div class="sd sd-g"><h3>Manual Verification Required <span class="bdg" style="background:var(--es);color:#ef9a9a;border:1px solid var(--eb);">All links below</span></h3></div>
+  <div class="stbl">
+    <div class="stbl-h">
+      <span class="stbl-t">Automated search failed — manually verify all sources below before any decision</span>
+      <button class="stbl-open" onclick="openAllManual()">Open All Links</button>
+    </div>
+    <div id="srcListFallback"></div>
+  </div>
+  <div class="acts" style="margin-top:16px">
+    <button class="btn bo" onclick="newSearch()">New Search</button>
+    <button class="btn bg" onclick="exportFailPDF()">Download Screening Failed Report</button>
+  </div>
+</div>
+
+<div class="sd sd-m" id="auditDivFallback" style="display:none"><h3>Audit Trail</h3></div>
+<div class="audit" id="auditElFallback" style="display:none"></div>
+
+<footer class="foot">
+  <p>This system is intended for authorised compliance personnel only.</p>
+  <p>Automated screening via OpenSanctions /match API (logic-v2) · UN · EU · OFAC · PEP · 100+ sources.</p>
+  <p>Results must be reviewed by a qualified compliance officer. No data is stored or transmitted beyond search queries.</p>
+</footer>
+</div><!-- /page -->
+
+<script>
+"use strict";
+
+/*
+ * ═══════════════════════════════════════════════════════════════════
+ * STATE MACHINE — per AML Screening Error Handling & Production Guide
+ *
+ *   idle    → user has not searched
+ *   running → search in progress
+ *   success → API responded OK (may be match, possible, or no match)
+ *   error   → API failed (MUST show "Screening Failed — No Decision")
+ *
+ * CRITICAL COMPLIANCE RULE:
+ *   state=error MUST NEVER display "No Match" or any clearance verdict.
+ *   It MUST display "Screening Failed — No Decision".
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
+const STATE = { IDLE:'idle', RUNNING:'running', SUCCESS:'success', ERROR:'error' };
+
+const S = Object.seal({
+  state: STATE.IDLE,
+  res: null,
+  par: null,
+  aud: [],
+  thresh: 0.6,
+  ms: 0,
+  errMsg: '',
+});
+
+const API = '/.netlify/functions/match';
+const clean = s => String(s||'').replace(/[<>"'`\\]/g,'').trim().slice(0,150);
+
+/* ── All 15 sources with metadata ── */
+function buildSources(p) {
+  const nm = encodeURIComponent(p.name);
+  const nq = encodeURIComponent(`"${p.name}" fraud OR corruption OR PMLA OR sanctions`);
+  return [
+    /* Automated via our serverless function */
+    { id:'os',   nm:'OpenSanctions (logic-v2)',      url:`https://www.opensanctions.org/search/?q=${nm}`,                                         type:'Automated ✓', badge:'sb-r', auto:true  },
+    /* Must check manually */
+    { id:'ofac', nm:'OFAC SDN List (US)',             url:'https://sanctionssearch.ofac.treas.gov/',                                               type:'Mandatory',   badge:'sb-m', auto:false },
+    { id:'un',   nm:'UN Security Council',            url:'https://www.un.org/securitycouncil/sanctions/information',                              type:'Mandatory',   badge:'sb-m', auto:false },
+    { id:'eu',   nm:'EU Sanctions Map',               url:'https://www.sanctionsmap.eu/#/main',                                                    type:'Mandatory',   badge:'sb-m', auto:false },
+    { id:'itpl', nm:'INTERPOL Red Notices',           url:'https://www.interpol.int/en/Crimes/Notices',                                            type:'Mandatory',   badge:'sb-m', auto:false },
+    { id:'fatf', nm:'FATF High-Risk Countries',       url:'https://www.fatf-gafi.org/en/topics/high-risk-and-other-monitored-jurisdictions.html',  type:'Reference',   badge:'sb-r', auto:false },
+    { id:'icij', nm:'ICIJ Offshore Leaks',            url:`https://offshoreleaks.icij.org/search?q=${nm}`,                                        type:'Reference',   badge:'sb-r', auto:false },
+    { id:'occrp',nm:'OCCRP Aleph',                   url:`https://aleph.occrp.org/search?q=${encodeURIComponent('"'+p.name+'"')}`,                type:'Reference',   badge:'sb-r', auto:false },
+    { id:'mca',  nm:'India MCA21 Director',           url:'https://www.mca.gov.in/content/mca/global/en/mca/master-data/DIN.html',                 type:'India Gov',   badge:'sb-i', auto:false },
+    { id:'sebi', nm:'SEBI Enforcement Orders',        url:'https://www.sebi.gov.in/enforcement/orders.html',                                       type:'India Gov',   badge:'sb-i', auto:false },
+    { id:'ed',   nm:'Enforcement Directorate (ED)',   url:'https://enforcementdirectorate.gov.in',                                                  type:'India Gov',   badge:'sb-i', auto:false },
+    { id:'rbi',  nm:'RBI Defaulter Records',          url:'https://www.rbi.org.in',                                                                type:'India Gov',   badge:'sb-i', auto:false },
+    { id:'cbi',  nm:'CBI Wanted Persons',             url:'https://cbi.gov.in',                                                                    type:'India Gov',   badge:'sb-i', auto:false },
+    { id:'sns',  nm:'Sansad — PEP Verification',      url:'https://sansad.in',                                                                     type:'India PEP',   badge:'sb-i', auto:false },
+    { id:'gnws', nm:'Google News Adverse Media',      url:`https://news.google.com/search?q=${nq}`,                                               type:'Media',       badge:'sb-r', auto:false },
+  ];
+}
+
+/* Checked state per source (in-memory only) */
+let checkedSrcs = {};
+
+/* ── State transition ── */
+function setState(newState) {
+  S.state = newState;
+  // Safety: ensure error state never shows results
+  if (newState === STATE.ERROR) {
+    document.getElementById('resEl').style.display = 'none';
+    document.getElementById('failBanner').style.display = 'block';
+    document.getElementById('manualFallback').style.display = 'block';
+    document.getElementById('auditDivFallback').style.display = 'flex';
+    document.getElementById('auditElFallback').style.display = 'block';
+    document.getElementById('failMsg').textContent = S.errMsg;
+    renderFallbackSrcs();
+  }
+}
+
+/* ── API call ── */
+async function callAPI(payload, timeout = 15000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const r = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: ctrl.signal,
+      credentials: 'same-origin',
+    });
+    clearTimeout(timer);
+    const json = await r.json();
+    if (!r.ok || json.ok === false) {
+      throw new Error(json.error || `Server returned ${r.status}`);
+    }
+    return json.data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* ── Build match queries ── */
+// Sends name as BOTH full name AND split firstName/lastName
+// This matches how OpenSanctions advanced search works
+function mkQuery(par) {
+  const props = {};
+  const w = (par.name||'').trim().split(/\s+/);
+  // Send full name — most reliable for logic-v2
+  props.name = [par.name.trim()];
+  // Also send split — helps logic-v2 score individual components
+  if (w.length >= 2) {
+    props.firstName = [w[0]];
+    props.lastName  = [w.slice(1).join(' ')];
+  }
+  // DOB — try full ISO date then year-only
+  if (par.dob) {
+    const m = par.dob.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+    if (m) {
+      props.birthDate = [`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`];
+    } else {
+      const y = (par.dob.match(/\d{4}/)||[])[0];
+      if (y) props.birthDate = [y];
+    }
+  }
+  // Country — send both full name and attempt ISO code
+  if (par.country) {
+    props.nationality = [par.country];
+    // Add common country name variations
+    const cc = par.country.toLowerCase();
+    if (cc.includes('india')) props.nationality = ['India', 'IN', 'IND'];
+    else if (cc.includes('pakistan')) props.nationality = ['Pakistan', 'PK', 'PAK'];
+    else if (cc.includes('uae') || cc.includes('emirates')) props.nationality = ['United Arab Emirates', 'AE', 'UAE'];
+    else if (cc.includes('bang')) props.nationality = ['Bangladesh', 'BD'];
+    else if (cc.includes('sri')) props.nationality = ['Sri Lanka', 'LK'];
+  }
+  if (par.city) props.addressCity = [par.city];
+  return { queries: { q1: { schema: 'Person', properties: props } } };
+}
+
+// Second query: first word + last word only (handles middle names)
+function mkQuery2(par) {
+  const w = (par.name||'').trim().split(/\s+/);
+  if (w.length < 2) return null;
+  const props = {
+    name: [par.name.trim()],
+    firstName: [w[0]],
+    lastName: [w[w.length-1]],
+  };
+  const y = (par.dob?.match(/\d{4}/)||[])[0];
+  if (y) props.birthDate = [y];
+  if (par.country) props.nationality = [par.country];
+  return { queries: { q1: { schema: 'Person', properties: props } } };
+}
+
+// Third query: name only, no other filters (catches cases where country/dob don't match DB)
+function mkQuery3(par) {
+  const props = { name: [par.name.trim()] };
+  const w = (par.name||'').trim().split(/\s+/);
+  if (w.length >= 2) { props.firstName = [w[0]]; props.lastName = [w.slice(1).join(' ')]; }
+  return { queries: { q1: { schema: 'Person', properties: props } } };
+}
+
+function parseResp(data) {
+  const r = data?.responses?.q1 || data?.responses?.subject || {};
+  return (r.results || []).map(x => ({
+    ent: x.entity || {}, score: x.score || 0,
+    match: x.match || false, features: x.features || {}
+  }));
+}
+
+/* ── Audit (synced to both audit elements) ── */
+function audit(msg) {
+  S.aud.push({ t: new Date().toLocaleTimeString('en-GB',{hour12:false}), m: msg });
+  const html = S.aud.map(e=>`<div class="ar"><span class="at">${e.t}</span><span class="am">${e.m}</span></div>`).join('');
+  const el1 = document.getElementById('auditEl');
+  const el2 = document.getElementById('auditElFallback');
+  if (el1) el1.innerHTML = html;
+  if (el2) el2.innerHTML = html;
+}
+
+/* ── Progress helpers ── */
+const setFill = v => { document.getElementById('pfill').style.width = v+'%'; };
+function buildSteps(labels) {
+  document.getElementById('stepsEl').innerHTML = labels
+    .map((l,i)=>`<div class="stp" id="stp${i}"><div class="si">${i+1}</div><span class="st">${l}</span><span class="stm" id="sm${i}"></span></div>`)
+    .join('');
+}
+function setStp(i, s, ms) {
+  const el = document.getElementById('stp'+i); if(!el) return;
+  el.className = 'stp '+s;
+  el.querySelector('.si').textContent = s==='ok'?'✓':s==='err'?'✗':(i+1);
+  if (ms) document.getElementById('sm'+i).textContent = `${ms}ms`;
+}
+
+/* ══════════════════════════════════════
+   MAIN SEARCH
+══════════════════════════════════════ */
+async function doSearch() {
+  const par = {
+    name:     clean(document.getElementById('f_name').value),
+    father:   clean(document.getElementById('f_father').value),
+    dob:      clean(document.getElementById('f_dob').value),
+    pan:      clean(document.getElementById('f_pan').value).toUpperCase(),
+    passport: clean(document.getElementById('f_passport').value).toUpperCase(),
+    city:     clean(document.getElementById('f_city').value),
+    country:  clean(document.getElementById('f_country').value),
+    analyst:  clean(document.getElementById('f_analyst').value)||'Not specified',
+    caseRef:  clean(document.getElementById('f_case').value)||'—',
+  };
+  S.thresh = parseFloat(document.getElementById('f_thresh').value)||0.6;
+  if (!par.name) { alert('Full name is required.'); return; }
+
+  // Reset state
+  Object.assign(S, { par, aud:[], res:null, ms:Date.now(), errMsg:'' });
+  checkedSrcs = {};
+  setState(STATE.RUNNING);
+
+  document.getElementById('cta').disabled = true;
+  document.getElementById('progEl').style.display = 'block';
+  document.getElementById('resEl').style.display = 'none';
+  document.getElementById('failBanner').style.display = 'none';
+  document.getElementById('manualFallback').style.display = 'none';
+  document.getElementById('auditDivFallback').style.display = 'none';
+  document.getElementById('auditElFallback').style.display = 'none';
+
+  buildSteps([
+    'Calling OpenSanctions /match API (logic-v2) via serverless function…',
+    'Running secondary name variant query…',
+    'Ranking and deduplicating results…',
+    'Enriching confirmed matches with full entity data…',
+    'Building report…',
+  ]);
+  setFill(5);
+
+  audit('══ SCREENING INITIATED ══');
+  audit(`Timestamp: ${new Date().toLocaleString('en-GB')}`);
+  audit(`Analyst: ${par.analyst}  |  Case: ${par.caseRef}`);
+  audit(`Subject: Name="${par.name}" | Father="${par.father||'—'}" | DOB="${par.dob||'—'}" | PAN="${par.pan||'—'}" | Country="${par.country||'—'}"`);
+  audit(`Score threshold: ≥${(S.thresh*100).toFixed(0)}%`);
+
+  let r1 = [], r2 = [];
+
+  /* Step 0 — Primary match */
+  setStp(0,'run'); const t0 = Date.now();
+  try {
+    const q1 = mkQuery(par);
+    audit(`Primary query: ${JSON.stringify(q1.queries.q1.properties)}`);
+    const data = await callAPI({ action:'match', payload:q1 }, 16000);
+    r1 = parseResp(data);
+    audit(`Primary /match: ${r1.length} results. Top: ${r1.slice(0,3).map(r=>(r.score*100).toFixed(0)+'%').join(', ')||'none'}`);
+    setStp(0,'ok',Date.now()-t0); setFill(32);
+  } catch(e) {
+    setStp(0,'err');
+    // CRITICAL: set error state, not success
+    S.errMsg = `OpenSanctions /match API call failed: ${e.message}. This may be a temporary connectivity issue or the serverless function may need redeployment.`;
+    audit(`SCREENING FAILED: ${e.message}`);
+    setState(STATE.ERROR);
+    document.getElementById('progEl').style.display = 'none';
+    document.getElementById('cta').disabled = false;
+    document.getElementById('failBanner').scrollIntoView({ behavior:'smooth', block:'start' });
+    return;
+  }
+
+  /* Step 1 — Run variant queries for maximum recall */
+  setStp(1,'run'); const t1 = Date.now();
+  const seen1 = new Set(r1.map(r=>r.ent?.id));
+  let r2 = [];
+  for (const qFn of [mkQuery2, mkQuery3]) {
+    const qBody = qFn(par); if (!qBody) continue;
+    try {
+      const d2 = await callAPI({ action:'match', payload:qBody }, 12000);
+      const extra = parseResp(d2).filter(r=>r.ent?.id&&!seen1.has(r.ent.id));
+      extra.forEach(r=>{ seen1.add(r.ent.id); r2.push(r); });
+      audit(`Variant +${extra.length} new (total: ${r1.length+r2.length})`);
+    } catch(e) { audit(`Variant skipped: ${e.message}`); }
+  }
+  setStp(1,'ok',Date.now()-t1); setFill(55);
+
+  /* Step 2 — Rank */
+  setStp(2,'run'); const t2 = Date.now();
+  const all = [...r1,...r2].sort((a,b)=>b.score-a.score);
+  const confirmed = all.filter(r=>r.score>=S.thresh);
+  const possible  = all.filter(r=>r.score>0.1&&r.score<S.thresh);
+  audit(`Ranked ${all.length} unique results. Confirmed: ${confirmed.length} | Possible: ${possible.length}`);
+  if (all.length>0) audit(`Best: "${all[0].ent?.caption}" — ${(all[0].score*100).toFixed(1)}%`);
+  setStp(2,'ok',Date.now()-t2); setFill(70);
+
+  /* Step 3 — Enrich */
+  setStp(3,'run'); const t3 = Date.now();
+  const enriched = [];
+  for (const item of confirmed.slice(0,8)) {
+    try {
+      const full = await callAPI({ action:'entity', id:item.ent?.id }, 8000);
+      enriched.push({...item, ent:full||item.ent});
+      audit(`Enriched: "${item.ent?.caption}"`);
+    } catch(_) { enriched.push(item); }
+  }
+  setStp(3,'ok',Date.now()-t3); setFill(88);
+
+  /* Step 4 — Compile */
+  setStp(4,'run');
+  S.res = { confirmed: enriched, possible: possible.slice(0,6) };
+  S.ms = Date.now() - S.ms;
+  audit(`Completed in ${S.ms}ms`);
+  audit('══ SCREENING COMPLETE ══');
+  setStp(4,'ok',S.ms); setFill(100);
+
+  // Success state — safe to show results
+  setState(STATE.SUCCESS);
+  renderAll();
+
+  setTimeout(()=>{
+    document.getElementById('progEl').style.display = 'none';
+    document.getElementById('resEl').style.display = 'block';
+    document.getElementById('resEl').scrollIntoView({ behavior:'smooth', block:'start' });
+    document.getElementById('cta').disabled = false;
+  }, 500);
+}
+
+/* ══════════════════════════════════════
+   RENDER
+══════════════════════════════════════ */
+function gp(pr, ...ks) {
+  for (const k of ks) { const v=pr?.[k]; if(Array.isArray(v)&&v.length) return v[0]; if(typeof v==='string'&&v) return v; }
+  return '';
+}
+
+function renderAll() {
+  const {confirmed,possible} = S.res, p = S.par;
+
+  /* Verdict */
+  const ve=document.getElementById('verdEl'), vt=document.getElementById('v-t');
+  document.getElementById('v-n').textContent = p.name.toUpperCase();
+  document.getElementById('v-m').textContent = `Case: ${p.caseRef}  ·  Analyst: ${p.analyst}  ·  ${new Date().toLocaleString('en-GB')}`;
+  if (confirmed.length) {
+    ve.className='verd v-h'; vt.className='vtag vt-h';
+    vt.textContent=`⚠  ${confirmed.length} CONFIRMED MATCH${confirmed.length>1?'ES':''}  —  ESCALATE`;
+  } else if (possible.length) {
+    ve.className='verd v-r'; vt.className='vtag vt-r';
+    vt.textContent=`◈  ${possible.length} POSSIBLE  —  REVIEW REQUIRED`;
+  } else {
+    ve.className='verd v-c'; vt.className='vtag vt-c';
+    vt.textContent='✓  NO MATCH IN AUTOMATED SEARCH  —  COMPLETE MANUAL CHECKS BELOW';
+  }
+
+  /* Params */
+  document.getElementById('pcGrid').innerHTML=[
+    {l:'Full Name',v:p.name},{l:"Father's Name",v:p.father},
+    {l:'Date of Birth',v:p.dob},{l:'PAN / Tax ID',v:p.pan},
+    {l:'Passport / ID',v:p.passport},{l:'City',v:p.city},
+    {l:'Country',v:p.country},{l:'Score Threshold',v:`≥${(S.thresh*100).toFixed(0)}%`},
+  ].map(d=>`<div class="pci"><div class="pcl">${d.l}</div><div class="pcv ${d.v?'':'n'}">${d.v||'—'}</div></div>`).join('');
+
+  /* Match cards */
+  const area=document.getElementById('matchArea'); area.innerHTML='';
+  if (!confirmed.length && !possible.length) {
+    area.innerHTML=`<div class="nm">
+      <div class="nm-h">No Automated Match Found</div>
+      <div class="nm-p">OpenSanctions (UN · EU · OFAC · PEP · 100+ sources) returned no records scoring ≥${(S.thresh*100).toFixed(0)}% for <strong>${p.name}</strong>.<br/><br/>You must still complete all manual verification checks below before making any compliance decision.</div>
+      <div class="nm-n">↓ Complete all verification checks below</div>
+    </div>`;
+  } else {
+    if (confirmed.length) {
+      area.innerHTML+=`<div class="sd sd-r"><h3>Confirmed Matches <span class="bdg br">${confirmed.length}</span></h3></div>`;
+      area.innerHTML+=confirmed.map(i=>mkCard(i,'conf')).join('');
+    }
+    if (possible.length) {
+      area.innerHTML+=`<div class="sd sd-w"><h3>Possible Matches — Review Required <span class="bdg bw">${possible.length}</span></h3></div>`;
+      area.innerHTML+=possible.map(i=>mkCard(i,'poss')).join('');
+    }
+  }
+
+  /* Sources checklist */
+  renderSrcs(S.par);
+}
+
+function mkCard(item,type) {
+  const ent=item.ent, pr=ent.properties||{};
+  const url=`https://www.opensanctions.org/entities/${ent.id||''}/`;
+  const pct=Math.round((item.score||0)*100);
+  const bc=pct>=80?'#e57373':pct>=60?'#ffcc80':'#81c784';
+  const caption=ent.caption||gp(pr,'name')||'—';
+  const dob=gp(pr,'birthDate','dob'), nat=gp(pr,'nationality','country');
+  const addr=gp(pr,'address','addressCity'), idno=gp(pr,'idNumber','passportNumber','nationalId');
+  const aliases=(pr.alias||[]).slice(0,4).join(', ');
+  const datasets=(ent.datasets||[]).join(', ');
+  const ftags=Object.entries(item.features||{}).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  return `<div class="rec ${type}">
+    <div class="rh">
+      <div><div class="rn">${caption}</div><div class="rm">Schema: ${ent.schema||'—'} · Source: OpenSanctions · ID: ${ent.id||'—'}</div></div>
+      <span class="rs">${pct}% Score</span>
+    </div>
+    <div class="rcf"><span class="rcfl">Match Score (logic-v2)</span>
+      <div class="rcbw"><div class="rcb" style="width:${pct}%;background:${bc}"></div></div>
+      <span class="rcp">${pct}%</span>
+    </div>
+    ${ftags.length?`<div class="rft"><span class="rftl">Score components:</span>${ftags.map(([k,v])=>`<span class="rftag">${k.replace(/_/g,' ')}: ${(v*100).toFixed(0)}%</span>`).join('')}</div>`:''}
+    <div class="rdg">
+      <div class="rdi"><div class="rdl">Recorded Name</div><div class="rdv">${caption}</div></div>
+      <div class="rdi"><div class="rdl">Date of Birth</div><div class="rdv ${dob?'':'n'}">${dob||'—'}</div></div>
+      <div class="rdi"><div class="rdl">Nationality</div><div class="rdv ${nat?'':'n'}">${nat||'—'}</div></div>
+      <div class="rdi"><div class="rdl">Address / City</div><div class="rdv ${addr?'':'n'}">${addr||'—'}</div></div>
+      <div class="rdi"><div class="rdl">ID / Passport</div><div class="rdv ${idno?'':'n'}">${idno||'—'}</div></div>
+      <div class="rdi"><div class="rdl">Also Known As</div><div class="rdv ${aliases?'':'n'}">${aliases||'—'}</div></div>
+      <div class="rdi"><div class="rdl">Sanctions Lists</div><div class="rdv ${datasets?'':'n'}">${datasets||'—'}</div></div>
+      <div class="rdi"><div class="rdl">Entity Type</div><div class="rdv">${ent.schema||'—'}</div></div>
+    </div>
+    <div class="rsrc"><div class="rsrcl">Full Source Record</div>
+      <a class="rsrca" href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>
+    </div>
+  </div>`;
+}
+
+function renderSrcs(p, containerId='srcList') {
+  const sources = buildSources(p);
+  document.getElementById('srcBdg').textContent = `${sources.length} sources`;
+  const dotColor = s => s.auto ? '#81c784' : s.badge==='sb-m' ? '#e57373' : s.badge==='sb-i' ? '#90caf9' : '#81c784';
+  document.getElementById(containerId).innerHTML = sources.map(s => {
+    const isChecked = s.auto || checkedSrcs[s.id];
+    return `<div class="src-row ${isChecked?'checked':''} ${s.auto?'auto-done':''}" id="srow-${s.id}" onclick="${s.auto?'':` toggleCheck('${s.id}')`}">
+      <div class="src-chk" title="${s.auto?'Automated':'Click when verified'}">✓</div>
+      <div class="src-dot" style="background:${dotColor(s)}"></div>
+      <span class="src-nm">${s.nm}</span>
+      <a class="src-url" href="${s.url}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${s.url.length>68?s.url.slice(0,68)+'…':s.url}</a>
+      <span class="src-b ${s.badge}">${s.type}</span>
+    </div>`;
+  }).join('');
+  updateCheckProgress(sources);
+}
+
+function renderFallbackSrcs() {
+  if (!S.par) return;
+  const sources = buildSources(S.par);
+  document.getElementById('srcListFallback').innerHTML = sources.map(s=>`
+    <div class="src-row" id="srowf-${s.id}" onclick="toggleCheckF('${s.id}')">
+      <div class="src-chk" title="Click when verified">✓</div>
+      <div class="src-dot" style="background:${s.badge==='sb-m'?'#e57373':s.badge==='sb-i'?'#90caf9':'#81c784'}"></div>
+      <span class="src-nm">${s.nm}</span>
+      <a class="src-url" href="${s.url}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">${s.url.length>68?s.url.slice(0,68)+'…':s.url}</a>
+      <span class="src-b ${s.badge}">${s.type}</span>
+    </div>`).join('');
+}
+
+function toggleCheck(id) {
+  checkedSrcs[id] = !checkedSrcs[id];
+  const row = document.getElementById('srow-'+id);
+  if (row) row.classList.toggle('checked', checkedSrcs[id]);
+  updateCheckProgress(buildSources(S.par));
+  audit(`Manual check ${checkedSrcs[id]?'completed':'unchecked'}: ${id}`);
+}
+
+function toggleCheckF(id) {
+  checkedSrcs[id] = !checkedSrcs[id];
+  const row = document.getElementById('srowf-'+id);
+  if (row) row.classList.toggle('checked', checkedSrcs[id]);
+  audit(`Manual check ${checkedSrcs[id]?'completed':'unchecked'}: ${id}`);
+}
+
+function updateCheckProgress(sources) {
+  const total = sources.length;
+  const done = sources.filter(s=>s.auto||checkedSrcs[s.id]).length;
+  const pct = Math.round((done/total)*100);
+  const fill = document.getElementById('cpFill');
+  const pctEl = document.getElementById('cpPct');
+  if (fill) fill.style.width = pct+'%';
+  if (pctEl) pctEl.textContent = pct+'%';
+}
+
+function openAllManual() {
+  if (!S.par) return;
+  const sources = buildSources(S.par).filter(s=>!s.auto);
+  if (!confirm(`This will open ${sources.length} tabs for manual verification. Continue?`)) return;
+  sources.forEach((s,i) => setTimeout(()=>window.open(s.url,'_blank'), i*350));
+  audit(`Opened ${sources.length} manual verification tabs`);
+}
+
+/* ══════════════════════════════════════
+   PDF EXPORT
+══════════════════════════════════════ */
+function exportPDF() {
+  if (S.state !== STATE.SUCCESS) { alert('No results to export.'); return; }
+  buildAndSavePDF(false);
+}
+
+function exportFailPDF() {
+  buildAndSavePDF(true);
+}
+
+function buildAndSavePDF(isFail) {
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
+  const L=14,R=196,W=R-L; let y=L;
+  const np=()=>{doc.addPage();y=L;};
+  const gd=(n=10)=>{if(y+n>272)np();};
+  const tx=(t,sz=10,b=false,rgb=[25,25,25],i=0)=>{
+    gd(sz*0.55+2);doc.setFontSize(sz);doc.setFont('helvetica',b?'bold':'normal');doc.setTextColor(...rgb);
+    const ls=doc.splitTextToSize(String(t||''),W-i);doc.text(ls,L+i,y);y+=ls.length*(sz*0.42)+2;
+  };
+  const rule=(c=[210,210,210])=>{gd(5);doc.setDrawColor(...c);doc.setLineWidth(0.25);doc.line(L,y,R,y);y+=5;};
+  const sp=(n=4)=>{y+=n;};
+  const fill=(x,yy,w,h,rgb)=>{doc.setFillColor(...rgb);doc.rect(x,yy,w,h,'F');};
+  const kv=(lbl,val)=>{gd(7);doc.setFontSize(8.5);doc.setFont('helvetica','bold');doc.setTextColor(80,80,80);doc.text(lbl+':',L+4,y);doc.setFont('helvetica','normal');doc.setTextColor(15,15,15);const ls=doc.splitTextToSize(String(val||'—'),W-56);doc.text(ls,L+52,y);y+=ls.length*4+2.5;};
+
+  /* Header */
+  fill(0,0,210,24,[10,22,36]);
+  doc.setTextColor(184,145,58);doc.setFontSize(13.5);doc.setFont('helvetica','bold');
+  doc.text('COMPLIANCE SCREENING REPORT',L,14);
+  doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(140,165,190);
+  doc.text('AML · PEP · Sanctions · PMLA 2002 · RBI KYC · OpenSanctions logic-v2',R,14,{align:'right'});
+  doc.setDrawColor(184,145,58);doc.setLineWidth(0.4);doc.line(0,24,210,24);
+  y=32;
+
+  const p=S.par;
+  tx(`Report Generated  : ${new Date().toLocaleString('en-GB')}`,8.5,false,[100,100,100]);
+  tx(`Analyst           : ${p.analyst}`,8.5,false,[100,100,100]);
+  tx(`Case Reference    : ${p.caseRef}`,8.5,false,[100,100,100]);
+  tx(`Screening Status  : ${isFail?'FAILED — NO DECISION':'COMPLETED'}`,8.5,false,[100,100,100]);
+  if (!isFail) tx(`Score Threshold   : ≥${(S.thresh*100).toFixed(0)}%  |  Duration: ${S.ms}ms`,8.5,false,[100,100,100]);
+  sp(2);rule([180,148,58]);
+
+  tx('SUBJECT OF SCREENING',11,true,[184,145,58]);sp(1);
+  tx(`Full Name : ${p.name}`,10,true);
+  if(p.father)   kv('Father / Relative',p.father);
+  if(p.dob)      kv('Date of Birth',p.dob);
+  if(p.pan)      kv('PAN / Tax',p.pan);
+  if(p.passport) kv('Passport / ID',p.passport);
+  if(p.city)     kv('City',p.city);
+  if(p.country)  kv('Country',p.country);
+  sp(2);rule();
+
+  /* Verdict box */
+  if (isFail) {
+    gd(18);fill(L,y,W,15,[180,30,30]);
+    doc.setTextColor(255,200,200);doc.setFontSize(11);doc.setFont('helvetica','bold');
+    doc.text('RESULT: SCREENING FAILED — NO DECISION. MANUAL VERIFICATION MANDATORY.',L+W/2,y+9.5,{align:'center'});
+    y+=20; sp(2);
+    tx('Per compliance policy: API failure is not "No Match". Subject cannot be cleared without manual verification.',10,false,[180,30,30]);
+    tx(`Error: ${S.errMsg}`,9,false,[140,50,50]);
+    sp(2);rule();
+  } else {
+    const {confirmed,possible}=S.res;
+    const vc=confirmed.length>0?[180,30,30]:possible.length>0?[160,108,20]:[18,108,58];
+    const vt=confirmed.length>0?`RESULT: ${confirmed.length} CONFIRMED MATCH(ES) — ESCALATE TO MLRO`:possible.length>0?`RESULT: ${possible.length} POSSIBLE — MANUAL REVIEW REQUIRED`:'RESULT: NO AUTOMATED MATCH — COMPLETE MANUAL CHECKS BELOW';
+    gd(16);fill(L,y,W,13,vc.map(x=>Math.min(255,x+185)));
+    doc.setTextColor(...vc);doc.setFontSize(10.5);doc.setFont('helvetica','bold');
+    doc.text(vt,L+W/2,y+8.5,{align:'center'});y+=18;
+
+    /* Match records */
+    if(confirmed.length>0){
+      sp(2);rule([180,30,30]);
+      tx(`CONFIRMED MATCHES (${confirmed.length})`,12,true,[180,30,30]);sp(2);
+      confirmed.forEach((item,idx)=>{
+        gd(35);
+        const ent=item.ent,pr=ent.properties||{},g=(...k)=>gp(pr,...k);
+        const url=`https://www.opensanctions.org/entities/${ent.id||''}/`;
+        fill(L,y,W,12,[245,238,238]);
+        doc.setTextColor(140,20,20);doc.setFontSize(11);doc.setFont('helvetica','bold');
+        doc.text(`Match ${idx+1}  —  ${ent.caption||g('name')||'Unknown'}  [${Math.round((item.score||0)*100)}%]`,L+4,y+8);y+=14;
+        const ff=Object.entries(item.features||{}).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([k,v])=>`${k}: ${(v*100).toFixed(0)}%`).join(' · ');
+        if(ff) tx(`Score components: ${ff}`,9,false,[140,30,30],4);
+        sp(1);
+        [['Recorded Name',ent.caption||g('name')||'—'],['Date of Birth',g('birthDate','dob')||'—'],['Nationality',g('nationality','country')||'—'],['Address / City',g('address','addressCity')||'—'],['ID / Passport',g('idNumber','passportNumber','nationalId')||'—'],['Also Known As',(pr.alias||[]).join(', ')||'—'],['Sanctions Lists',(ent.datasets||[]).join(', ')||g('program','sanction')||'—'],['Entity Type',ent.schema||'—']].forEach(([l,v])=>kv(l,v));
+        sp(1);tx(`Source URL : ${url}`,8.5,false,[0,55,160],4);sp(3);rule([220,220,220]);
+      });
+    }
+    if(possible.length>0){
+      sp(2);rule([160,108,20]);
+      tx(`POSSIBLE MATCHES (${possible.length})`,12,true,[160,108,20]);sp(2);
+      possible.forEach((item,idx)=>{
+        gd(12);const url=`https://www.opensanctions.org/entities/${item.ent?.id||''}/`;
+        tx(`${idx+1}.  ${item.ent?.caption||'—'}  [${Math.round((item.score||0)*100)}%]`,10,true);
+        tx(`     Source: ${url}`,8.5,false,[0,55,160]);sp(2);
+      });rule();
+    }
+  }
+
+  /* ALL 15 SOURCES */
+  sp(2);rule([40,110,70]);
+  tx('ALL DATABASES & SOURCES CHECKED IN THIS SCREENING',11,true,[30,100,60]);sp(2);
+  if (!isFail) {
+    tx('AUTOMATED (searched by this system):',9,true,[20,20,20]);
+    tx(`  • OpenSanctions /match API (logic-v2): https://www.opensanctions.org/search/?q=${encodeURIComponent(p.name)}`,8.5,false,[0,50,140]);
+    sp(2);tx('MANUAL (must be verified by analyst — tick when checked):',9,true,[20,20,20]);sp(1);
+  }
+  const srcs=buildSources(p);
+  const toList=isFail?srcs:srcs.filter(s=>!s.auto);
+  toList.forEach((s,i)=>{
+    gd(8);
+    doc.setFontSize(9);doc.setFont('helvetica','normal');
+    const chkd=checkedSrcs[s.id];
+    doc.setTextColor(chkd?20:60,chkd?120:60,chkd?50:60);
+    doc.text(`${String(i+1).padStart(2,' ')}.  [${chkd?'✓':' '}]  ${s.nm}`,L+4,y);
+    doc.setTextColor(0,50,150);
+    const ls=doc.splitTextToSize(s.url,W-70);doc.text(ls,L+64,y);
+    doc.setTextColor(100,100,100);doc.text(`[${s.type}]`,R,y,{align:'right'});
+    y+=ls.length*3.8+2;
+  });
+
+  sp(2);rule();
+  tx('AUDIT TRAIL',10,true,[100,100,100]);sp(1);
+  S.aud.forEach(e=>{gd(6);doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(184,145,58);doc.text(`[${e.t}]`,L+4,y);doc.setTextColor(70,80,90);const ls=doc.splitTextToSize(e.m,W-42);doc.text(ls,L+38,y);y+=ls.length*3.5+1.5;});
+
+  const pg=doc.getNumberOfPages();
+  for(let i=1;i<=pg;i++){doc.setPage(i);fill(0,287,210,10,[238,242,246]);doc.setFontSize(6.5);doc.setFont('helvetica','normal');doc.setTextColor(150,155,160);doc.text('Compliance Screening Report  ·  Confidential  ·  Authorised Personnel Only  ·  OpenSanctions logic-v2',105,293,{align:'center'});doc.text(`Page ${i} of ${pg}`,R,293,{align:'right'});}
+
+  const fn=`Screening_${isFail?'FAILED_':''}${p.name.replace(/[^a-zA-Z0-9]/g,'_')}_${new Date().toISOString().slice(0,10)}.pdf`;
+  doc.save(fn);
+  audit(`PDF exported: ${fn}`);
+}
+
+/* ── Reset ── */
+function newSearch() {
+  Object.assign(S,{state:STATE.IDLE,res:null,par:null,aud:[],ms:0,errMsg:''});
+  checkedSrcs={};
+  ['resEl','progEl','failBanner','manualFallback','auditDivFallback','auditElFallback'].forEach(id=>{document.getElementById(id).style.display='none';});
+  document.getElementById('formEl').style.display='block';
+  ['f_name','f_father','f_dob','f_pan','f_passport','f_city','f_country','f_analyst','f_case'].forEach(id=>{document.getElementById(id).value='';});
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&document.activeElement?.tagName==='INPUT'&&S.state!==STATE.RUNNING)doSearch();
+});
+</script>
+
+</body>
+</html>
