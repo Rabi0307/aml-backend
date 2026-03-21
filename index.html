@@ -708,7 +708,7 @@ async function doSearch() {
   /* Step 1 — Run variant queries for maximum recall */
   setStp(1,'run'); const t1 = Date.now();
   const seen1 = new Set(r1.map(r=>r.ent?.id));
-  let r2 = [];
+  r2 = [];
   for (const qFn of [mkQuery2, mkQuery3]) {
     const qBody = qFn(par); if (!qBody) continue;
     try {
